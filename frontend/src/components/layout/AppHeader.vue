@@ -1,6 +1,6 @@
 <template>
-  <header class="bg-white shadow-sm border-b border-gray-200">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+  <header class="sticky top-0 z-50 bg-white shadow-sm border-b border-gray-200">
+    <div class="mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center h-16">
         <!-- Logo and Navigation -->
         <div class="flex items-center space-x-8">
@@ -11,7 +11,7 @@
                 <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
               </svg>
             </div>
-            <span class="text-xl font-bold text-gray-900">Video Downloader</span>
+            <span class="text-xl font-bold text-gray-900">Video & MP3 Downloader</span>
           </RouterLink>
           
           <!-- Navigation Links -->
@@ -71,6 +71,13 @@
               class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200"
             >
               <RouterLink 
+                to="/history" 
+                class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                @click="showUserMenu = false"
+              >
+                Download History
+              </RouterLink>
+              <RouterLink 
                 to="/settings" 
                 class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                 @click="showUserMenu = false"
@@ -87,17 +94,12 @@
           </div>
           
           <div v-else class="flex items-center space-x-2">
-            <RouterLink 
-              to="/login" 
-              class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-            >
-              Sign in
-            </RouterLink>
+          
             <RouterLink 
               to="/login" 
               class="btn-primary text-sm"
             >
-              Get Started
+              Sign in for Cloud Storage
             </RouterLink>
           </div>
         </div>
@@ -107,10 +109,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useDownloadStore } from '@/stores/download'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const authStore = useAuthStore()

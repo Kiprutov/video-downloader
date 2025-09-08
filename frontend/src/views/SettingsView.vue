@@ -231,8 +231,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { computed, reactive, ref } from 'vue'
 
 const authStore = useAuthStore()
 

@@ -188,10 +188,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
 import { useDownloadStore } from '@/stores/download'
+import { computed, onMounted, ref } from 'vue'
 import { useToast } from 'vue-toastification'
-import type { DownloadHistory } from '@/types'
 
 const downloadStore = useDownloadStore()
 const toast = useToast()

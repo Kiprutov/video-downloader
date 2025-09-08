@@ -99,26 +99,151 @@
       </div>
     </div>
 
-    <!-- Download Button -->
-    <div class="flex justify-end pt-4 border-t border-gray-200">
-      <button
-        @click="handleDownload"
-        :disabled="!selectedFormat"
-        class="btn-primary px-8 py-3 text-lg flex items-center space-x-2"
-        :class="{ 'opacity-50 cursor-not-allowed': !selectedFormat }"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        <span>Download {{ selectedFormatName }}</span>
-      </button>
+    <!-- Download Options -->
+    <div class="pt-4 border-t border-gray-200" data-download-method>
+      <h4 class="text-lg font-medium text-gray-900 mb-4">Choose Download Method</h4>
+      
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Direct Download (Recommended) -->
+        <div class="border-2 border-green-200 rounded-lg p-4 hover:border-green-300 transition-colors bg-green-50">
+          <div class="flex items-start space-x-3">
+            <div class="flex-shrink-0">
+              <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h5 class="text-lg font-medium text-gray-900">Direct Download ⚡</h5>
+              <p class="text-sm text-gray-600 mt-1">Fastest method - browser handles download directly</p>
+              <div class="mt-2 text-xs text-green-600 font-medium">Recommended</div>
+              <button
+                @click="handleDirectDownload"
+                :disabled="!selectedFormat || isDownloading"
+                class="mt-3 btn-primary px-6 py-2 text-sm flex items-center space-x-2"
+                :class="{ 
+                  'opacity-50 cursor-not-allowed': !selectedFormat || isDownloading,
+                  'animate-pulse': isDownloading
+                }"
+              >
+                <svg v-if="!isDownloading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <svg v-else class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>{{ isDownloading ? 'Downloading...' : 'Download Direct' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Streaming Download -->
+        <div class="border-2 border-blue-200 rounded-lg p-4 hover:border-blue-300 transition-colors bg-blue-50">
+          <div class="flex items-start space-x-3">
+            <div class="flex-shrink-0">
+              <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h5 class="text-lg font-medium text-gray-900">Streaming Download</h5>
+              <p class="text-sm text-gray-600 mt-1">Streams file as it downloads with real progress</p>
+              <button
+                @click="handleStreamingDownload"
+                :disabled="!selectedFormat || isDownloading"
+                class="mt-3 btn-primary px-6 py-2 text-sm flex items-center space-x-2"
+                :class="{ 
+                  'opacity-50 cursor-not-allowed': !selectedFormat || isDownloading,
+                  'animate-pulse': isDownloading
+                }"
+              >
+                <svg v-if="!isDownloading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+                <svg v-else class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>{{ isDownloading ? 'Streaming...' : 'Stream Download' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Legacy Download -->
+        <div class="border-2 border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
+          <div class="flex items-start space-x-3">
+            <div class="flex-shrink-0">
+              <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h5 class="text-lg font-medium text-gray-900">Server Download 📊</h5>
+              <p class="text-sm text-gray-600 mt-1">Server processes with real-time progress tracking</p>
+              <div class="mt-2 text-xs text-blue-600 font-medium">Shows progress</div>
+              <button
+                @click="handleLegacyDownload"
+                :disabled="!selectedFormat || isDownloading"
+                class="mt-3 btn-primary px-6 py-2 text-sm flex items-center space-x-2"
+                :class="{ 
+                  'opacity-50 cursor-not-allowed': !selectedFormat || isDownloading,
+                  'animate-pulse': isDownloading
+                }"
+              >
+                <svg v-if="!isDownloading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <svg v-else class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>{{ isDownloading ? 'Processing...' : 'Download with Progress' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cloud Download -->
+        <div class="border-2 border-gray-200 rounded-lg p-4 hover:border-primary-300 transition-colors">
+          <div class="flex items-start space-x-3">
+            <div class="flex-shrink-0">
+              <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h5 class="text-lg font-medium text-gray-900">Save to Cloud</h5>
+              <p class="text-sm text-gray-600 mt-1">Save to your cloud storage and access from anywhere.</p>
+              <button
+                @click="handleCloudDownload"
+                :disabled="!selectedFormat"
+                class="mt-3 btn-secondary px-6 py-2 text-sm flex items-center space-x-2"
+                :class="{ 'opacity-50 cursor-not-allowed': !selectedFormat }"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+                <span>Save to Cloud</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { VideoMetadata, VideoFormat } from '@/types'
+import { useDownloadStore } from '@/stores/download'
+import type { VideoMetadata } from '@/types'
+import { computed, ref } from 'vue'
 
 interface Props {
   metadata: VideoMetadata
@@ -126,12 +251,20 @@ interface Props {
 
 interface Emits {
   (e: 'format-selected', format: string): void
+  (e: 'local-download', format: string): void
+  (e: 'cloud-download', format: string): void
+  (e: 'direct-download', format: string): void
+  (e: 'streaming-download', format: string): void
+  (e: 'legacy-download', format: string): void
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+const downloadStore = useDownloadStore()
 const selectedFormat = ref('')
+
+const isDownloading = computed(() => downloadStore.isDownloading)
 
 const availableFormats = computed(() => {
   // Sort formats by quality (highest first)
@@ -142,18 +275,40 @@ const availableFormats = computed(() => {
   })
 })
 
-const selectedFormatName = computed(() => {
-  const format = props.metadata.formats.find(f => f.format_id === selectedFormat.value)
-  return format?.format || 'Selected Format'
-})
+// Removed unused computed property
 
 const selectFormat = (formatId: string) => {
   selectedFormat.value = formatId
+  emit('format-selected', formatId)
 }
 
-const handleDownload = () => {
+const handleLocalDownload = () => {
   if (selectedFormat.value) {
-    emit('format-selected', selectedFormat.value)
+    emit('local-download', selectedFormat.value)
+  }
+}
+
+const handleCloudDownload = () => {
+  if (selectedFormat.value) {
+    emit('cloud-download', selectedFormat.value)
+  }
+}
+
+const handleDirectDownload = () => {
+  if (selectedFormat.value) {
+    emit('direct-download', selectedFormat.value)
+  }
+}
+
+const handleStreamingDownload = () => {
+  if (selectedFormat.value) {
+    emit('streaming-download', selectedFormat.value)
+  }
+}
+
+const handleLegacyDownload = () => {
+  if (selectedFormat.value) {
+    emit('legacy-download', selectedFormat.value)
   }
 }
 

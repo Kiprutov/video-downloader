@@ -2,7 +2,7 @@
   <div class="max-w-4xl mx-auto space-y-8">
     <!-- Page Header -->
     <div class="text-center">
-      <h1 class="text-3xl font-bold text-gray-900 mb-4">Download Videos</h1>
+      <h1 class="text-3xl font-bold text-gray-900 mb-4">Download Videos & MP3s</h1>
       <p class="text-lg text-gray-600">
         Enter a video URL to get started with your download
       </p>
@@ -24,13 +24,19 @@
     </div>
 
     <!-- Metadata Display -->
-    <div v-if="downloadStore.metadata" class="card animate-fade-in">
+    <div v-if="downloadStore.metadata" ref="videoInfoSection" class="card animate-fade-in">
       <div class="card-header">
         <h2 class="text-xl font-semibold text-gray-900">Video Information</h2>
       </div>
       
       <VideoMetadata 
+        ref="videoMetadataComponent"
         :metadata="downloadStore.metadata"
+        @local-download="handleLocalDownload"
+        @cloud-download="handleCloudDownload"
+        @direct-download="handleDirectDownload"
+        @streaming-download="handleStreamingDownload"
+        @legacy-download="handleLegacyDownload"
         @format-selected="handleFormatSelected"
       />
     </div>
@@ -121,23 +127,57 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useDownloadStore } from '@/stores/download'
-import { useToast } from 'vue-toastification'
+import DownloadProgress from '@/components/DownloadProgress.vue'
 import UrlInput from '@/components/UrlInput.vue'
 import VideoMetadata from '@/components/VideoMetadata.vue'
-import DownloadProgress from '@/components/DownloadProgress.vue'
+import { useAuthStore } from '@/stores/auth'
+import { useDownloadStore } from '@/stores/download'
 import type { DownloadRequest } from '@/types'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useToast } from 'vue-toastification'
 
 const downloadStore = useDownloadStore()
+const authStore = useAuthStore()
+const router = useRouter()
 const toast = useToast()
 
 const videoUrl = ref('')
 const selectedFormat = ref('')
+const videoInfoSection = ref<HTMLElement>()
+const videoMetadataComponent = ref<InstanceType<typeof VideoMetadata>>()
 
 const recentDownloads = computed(() => 
   downloadStore.downloadHistory.slice(0, 3)
 )
+
+const scrollToVideoInfo = async () => {
+  await nextTick()
+  if (videoInfoSection.value) {
+    const elementTop = videoInfoSection.value.offsetTop
+    const offset = 100 // Offset from top of viewport
+    window.scrollTo({
+      top: elementTop - offset,
+      behavior: 'smooth'
+    })
+  }
+}
+
+const scrollToDownloadMethod = async () => {
+  await nextTick()
+  if (videoMetadataComponent.value) {
+    // Find the download method section within the VideoMetadata component
+    const downloadMethodSection = videoMetadataComponent.value.$el.querySelector('[data-download-method]')
+    if (downloadMethodSection) {
+      const elementTop = downloadMethodSection.offsetTop
+      const offset = 100 // Offset from top of viewport
+      window.scrollTo({
+        top: elementTop - offset,
+        behavior: 'smooth'
+      })
+    }
+  }
+}
 
 const handleUrlSubmit = async (url: string) => {
   videoUrl.value = url
@@ -145,12 +185,19 @@ const handleUrlSubmit = async (url: string) => {
   
   if (result.success) {
     toast.success('Video metadata loaded successfully!')
+    // Scroll to video information section
+    await scrollToVideoInfo()
   } else {
     toast.error(result.error || 'Failed to load video metadata')
   }
 }
 
-const handleFormatSelected = async (format: string) => {
+const handleFormatSelected = async () => {
+  // Scroll to download method section when format is selected
+  await scrollToDownloadMethod()
+}
+
+const handleLocalDownload = async (format: string) => {
   selectedFormat.value = format
   
   if (!videoUrl.value) {
@@ -160,7 +207,8 @@ const handleFormatSelected = async (format: string) => {
 
   const request: DownloadRequest = {
     url: videoUrl.value,
-    format: format
+    format: format,
+    type: 'local'
   }
 
   const result = await downloadStore.startDownload(request)
@@ -172,9 +220,108 @@ const handleFormatSelected = async (format: string) => {
   }
 }
 
+const handleCloudDownload = async (format: string) => {
+  selectedFormat.value = format
+  
+  if (!videoUrl.value) {
+    toast.error('No video URL provided')
+    return
+  }
+
+  // Check if user is authenticated for cloud download
+  if (!authStore.isAuthenticated) {
+    toast.error('Please sign in to save downloads to cloud storage')
+    router.push('/login')
+    return
+  }
+
+  const request: DownloadRequest = {
+    url: videoUrl.value,
+    format: format,
+    type: 'cloud'
+  }
+
+  const result = await downloadStore.startDownload(request)
+  
+  if (result.success) {
+    toast.success('Cloud download started successfully!')
+  } else {
+    toast.error(result.error || 'Failed to start cloud download')
+  }
+}
+
 const handleCancelDownload = () => {
   downloadStore.cancelDownload()
   toast.info('Download cancelled')
+}
+
+const handleDirectDownload = async (format: string) => {
+  selectedFormat.value = format
+  
+  if (!videoUrl.value) {
+    toast.error('No video URL provided')
+    return
+  }
+
+  const request: DownloadRequest = {
+    url: videoUrl.value,
+    format: format,
+    type: 'local'
+  }
+
+  const result = await downloadStore.startDirectDownload(request)
+  
+  if (result.success) {
+    toast.success('Direct download started!')
+  } else {
+    toast.error(result.error || 'Failed to start direct download')
+  }
+}
+
+const handleStreamingDownload = async (format: string) => {
+  selectedFormat.value = format
+  
+  if (!videoUrl.value) {
+    toast.error('No video URL provided')
+    return
+  }
+
+  const request: DownloadRequest = {
+    url: videoUrl.value,
+    format: format,
+    type: 'local'
+  }
+
+  const result = await downloadStore.startStreamingDownload(request)
+  
+  if (result.success) {
+    toast.success('Streaming download started!')
+  } else {
+    toast.error(result.error || 'Failed to start streaming download')
+  }
+}
+
+const handleLegacyDownload = async (format: string) => {
+  selectedFormat.value = format
+  
+  if (!videoUrl.value) {
+    toast.error('No video URL provided')
+    return
+  }
+
+  const request: DownloadRequest = {
+    url: videoUrl.value,
+    format: format,
+    type: 'local'
+  }
+
+  const result = await downloadStore.startServerDownloadWithProgress(request)
+  
+  if (result.success) {
+    toast.success('Server download started with progress tracking!')
+  } else {
+    toast.error(result.error || 'Failed to start server download')
+  }
 }
 
 const formatFileSize = (bytes: number): string => {

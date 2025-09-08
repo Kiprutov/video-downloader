@@ -24,18 +24,22 @@ export interface VideoFormat {
 }
 
 export interface DownloadRequest {
-  url: string
-  format: string
-  quality?: string
+  url: string;
+  format: string;
+  quality?: string;
+  type?: "local" | "cloud";
 }
 
 export interface DownloadProgress {
-  id: string
-  status: 'pending' | 'downloading' | 'converting' | 'completed' | 'failed'
-  progress: number
-  speed?: string
-  eta?: string
-  error?: string
+  id: string;
+  url?: string;
+  format?: string;
+  quality?: string;
+  status: "pending" | "downloading" | "converting" | "completed" | "failed";
+  progress: number;
+  speed?: string;
+  eta?: string;
+  error?: string;
 }
 
 export interface DownloadHistory {

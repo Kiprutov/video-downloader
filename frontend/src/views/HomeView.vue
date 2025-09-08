@@ -4,11 +4,11 @@
     <section class="text-center">
       <div class="max-w-3xl mx-auto">
         <h1 class="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
-          Download Videos
+          Download Videos & MP3s
           <span class="text-gradient">Securely & Fast</span>
         </h1>
         <p class="text-xl text-gray-600 mb-8 leading-relaxed">
-          A modern, secure video downloader for personal use. Download from YouTube, 
+          A modern, secure downloader for videos and MP3s. Download from YouTube, 
           TikTok, Facebook and more with our business-grade infrastructure.
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center">
@@ -52,22 +52,22 @@
         <FeatureCard
           icon="lightning"
           title="Lightning Fast"
-          description="Optimized infrastructure ensures fast downloads with real-time progress tracking."
+          description="Optimized infrastructure ensures fast video and MP3 downloads with real-time progress tracking."
         />
         <FeatureCard
           icon="cloud"
           title="Cloud-Powered"
-          description="Built on Oracle Cloud with Firebase and Cloudflare for maximum reliability."
+          description="Built on Oracle Cloud with Firebase and Cloudflare for maximum reliability in video and MP3 processing."
         />
       </div>
     </section>
 
     <!-- Supported Platforms -->
-    <section class="py-16 bg-white rounded-2xl shadow-soft">
+    <section class="py-16 bg-white rounded-md ">
       <div class="text-center mb-12">
         <h2 class="text-3xl font-bold text-gray-900 mb-4">Supported Platforms</h2>
         <p class="text-lg text-gray-600">
-          Download from all major video platforms
+          Download videos and MP3s from all major platforms
         </p>
       </div>
       
@@ -75,25 +75,25 @@
         <PlatformCard
           name="YouTube"
           icon="youtube"
-          supported="true"
+          :supported="true"
           max-quality="4K"
         />
         <PlatformCard
           name="TikTok"
           icon="tiktok"
-          supported="true"
+          :supported="true"
           max-quality="1080p"
         />
         <PlatformCard
           name="Facebook"
           icon="facebook"
-          supported="true"
+          :supported="true"
           max-quality="1080p"
         />
         <PlatformCard
           name="Instagram"
           icon="instagram"
-          supported="true"
+          :supported="true"
           max-quality="1080p"
         />
       </div>
@@ -104,7 +104,7 @@
       <div class="max-w-2xl mx-auto">
         <h2 class="text-3xl font-bold text-gray-900 mb-4">Ready to Get Started?</h2>
         <p class="text-lg text-gray-600 mb-8">
-          Join thousands of users who trust our secure video downloader for their personal needs.
+          Join thousands of users who trust our secure downloader for videos and MP3s.
         </p>
         <RouterLink 
           to="/download" 
@@ -121,9 +121,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import FeatureCard from '@/components/FeatureCard.vue'
 import PlatformCard from '@/components/PlatformCard.vue'
+import { onMounted } from 'vue'
 
 const scrollToFeatures = () => {
   const featuresSection = document.getElementById('features')
