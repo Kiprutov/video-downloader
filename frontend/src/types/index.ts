@@ -35,7 +35,13 @@ export interface DownloadProgress {
   url?: string;
   format?: string;
   quality?: string;
-  status: "pending" | "downloading" | "converting" | "completed" | "failed";
+  status:
+    | "starting"
+    | "pending"
+    | "downloading"
+    | "converting"
+    | "completed"
+    | "failed";
   progress: number;
   speed?: string;
   eta?: string;

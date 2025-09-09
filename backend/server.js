@@ -108,17 +108,51 @@ async function startDownloadProcess(downloadId, url, format, quality) {
     const filename = `video_${timestamp}`;
     const outputPath = path.join(downloadsDir, filename);
 
-    // Update status to downloading
+    // Try to prefetch duration for better conversion ETA/percent
+    let totalDurationSeconds = null;
+    try {
+      const metaArgs = [
+        "--extractor-args",
+        "youtube:player_client=web",
+        "--user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "--referer",
+        "https://www.youtube.com/",
+        "--no-check-certificate",
+        "-q",
+        "--no-warnings",
+        "--dump-json",
+        "--no-download",
+        url,
+      ];
+      const { stdout: metaStdout } = await runYtDlp(metaArgs);
+      const jsonLine =
+        metaStdout
+          .split("\n")
+          .map((l) => l.trim())
+          .find((l) => l.startsWith("{") && l.endsWith("}")) ||
+        metaStdout.trim();
+      const metadata = JSON.parse(jsonLine);
+      if (metadata && typeof metadata.duration === "number") {
+        totalDurationSeconds = metadata.duration;
+      }
+    } catch (e) {
+      // Non-fatal if we can't get duration
+    }
+
+    // Initialize status as starting (0%)
     activeDownloads.set(downloadId, {
       ...activeDownloads.get(downloadId),
-      status: "downloading",
-      progress: 10,
+      status: "starting",
+      progress: 0,
+      speed: "Starting...",
+      eta: "Unknown",
     });
 
     io.emit("download-progress", {
       id: downloadId,
-      status: "downloading",
-      progress: 10,
+      status: "starting",
+      progress: 0,
       speed: "Starting...",
       eta: "Unknown",
     });
@@ -148,6 +182,15 @@ async function startDownloadProcess(downloadId, url, format, quality) {
         `${outputPath}.%(ext)s`,
         "--progress-template",
         "download:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.speed)s:%(progress.eta)s",
+        // Forward FFmpeg post-processing progress to stdout for parsing
+        "--ppa",
+        "Merger:-progress pipe:1 -nostats -v quiet",
+        "--ppa",
+        "FFmpegVideoConvertor:-progress pipe:1 -nostats -v quiet",
+        "--ppa",
+        "FFmpegVideoRemuxer:-progress pipe:1 -nostats -v quiet",
+        "--ppa",
+        "FFmpegAudioConvertor:-progress pipe:1 -nostats -v quiet",
         url,
       ],
       {
@@ -159,46 +202,180 @@ async function startDownloadProcess(downloadId, url, format, quality) {
     let downloadedBytes = 0;
     let speed = "0 MB/s";
     let eta = "Unknown";
+    let hasEmittedDownloading = false;
+    let isConverting = false;
 
     ytdlpProcess.stdout.on("data", (data) => {
-      const output = data.toString();
-      console.log("yt-dlp stdout:", output);
+      const text = data.toString();
+      console.log("yt-dlp stdout:", text);
 
-      // Parse progress from yt-dlp output
-      const progressMatch = output.match(
-        /download:(\d+):(\d+):([^:]+):([^\n]+)/
-      );
-      if (progressMatch) {
-        downloadedBytes = parseInt(progressMatch[1]);
-        totalBytes = parseInt(progressMatch[2]);
-        speed = progressMatch[3];
-        eta = progressMatch[4];
+      // Split to handle combined download and ffmpeg progress lines
+      text.split(/\r?\n/).forEach((lineRaw) => {
+        const line = lineRaw.trim();
+        if (!line) return;
 
-        const progress =
-          totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
+        // yt-dlp download progress
+        const dlMatch = line.match(/download:(\d+):(\d+):([^:]+):(.+)/);
+        if (dlMatch) {
+          downloadedBytes = parseInt(dlMatch[1]);
+          totalBytes = parseInt(dlMatch[2]);
+          speed = dlMatch[3];
+          eta = dlMatch[4];
 
-        // Update progress
-        activeDownloads.set(downloadId, {
-          ...activeDownloads.get(downloadId),
-          progress: Math.min(progress, 95), // Cap at 95% until complete
-          speed: speed,
-          eta: eta,
-        });
+          const progress =
+            totalBytes > 0
+              ? Math.round((downloadedBytes / totalBytes) * 100)
+              : 0;
 
-        // Send progress update
-        io.emit("download-progress", {
-          id: downloadId,
-          status: "downloading",
-          progress: Math.min(progress, 95),
-          speed: speed,
-          eta: eta,
-        });
-      }
+          if (!hasEmittedDownloading) {
+            hasEmittedDownloading = true;
+            activeDownloads.set(downloadId, {
+              ...activeDownloads.get(downloadId),
+              status: "downloading",
+            });
+          }
+
+          const clamped = Math.min(progress, 95);
+          activeDownloads.set(downloadId, {
+            ...activeDownloads.get(downloadId),
+            progress: clamped,
+            speed: speed,
+            eta: eta,
+          });
+
+          io.emit("download-progress", {
+            id: downloadId,
+            status: isConverting ? "converting" : "downloading",
+            progress: clamped,
+            speed: isConverting ? "Processing..." : speed,
+            eta: isConverting ? "Finalizing" : eta,
+          });
+          return;
+        }
+
+        // ffmpeg post-processing progress (from -progress pipe:1)
+        if (line.startsWith("out_time_ms=") || line.startsWith("out_time=")) {
+          isConverting = true;
+
+          let outTimeMs = null;
+          if (line.startsWith("out_time_ms=")) {
+            const v = line.split("=")[1];
+            const num = parseInt(v, 10);
+            if (!Number.isNaN(num)) outTimeMs = num;
+          }
+
+          // Update progress based on duration if available
+          let convProgress = activeDownloads.get(downloadId)?.progress || 95;
+          if (outTimeMs != null && totalDurationSeconds) {
+            const denom = totalDurationSeconds * 1_000_000; // out_time_ms is in microseconds
+            if (denom > 0) {
+              convProgress = Math.min(
+                99,
+                Math.max(96, Math.round((outTimeMs / denom) * 100))
+              );
+            }
+          } else {
+            convProgress = Math.min(99, Math.max(convProgress, 96));
+          }
+
+          // Emit converting update (speed/eta refined below if we parse speed line)
+          activeDownloads.set(downloadId, {
+            ...activeDownloads.get(downloadId),
+            status: "converting",
+            progress: convProgress,
+            speed: "Processing...",
+            eta: "Finalizing",
+          });
+
+          io.emit("download-progress", {
+            id: downloadId,
+            status: "converting",
+            progress: convProgress,
+            speed: "Processing...",
+            eta: "Finalizing",
+          });
+          return;
+        }
+
+        if (line.startsWith("speed=")) {
+          // Example: speed=1.23x
+          const sp = line.split("=")[1]?.trim();
+          const speedDisplay = sp ? `${sp}` : "Processing...";
+          const current = activeDownloads.get(downloadId) || {};
+          activeDownloads.set(downloadId, {
+            ...current,
+            status: "converting",
+            speed: speedDisplay,
+          });
+
+          io.emit("download-progress", {
+            id: downloadId,
+            status: "converting",
+            progress: current.progress || 97,
+            speed: speedDisplay,
+            eta: current.eta || "Finalizing",
+          });
+          return;
+        }
+
+        if (line.startsWith("progress=")) {
+          // progress=continue|end — keep status converting until close event
+          if (!isConverting) {
+            isConverting = true;
+          }
+          const current = activeDownloads.get(downloadId) || {};
+          activeDownloads.set(downloadId, {
+            ...current,
+            status: "converting",
+          });
+          io.emit("download-progress", {
+            id: downloadId,
+            status: "converting",
+            progress: current.progress || 97,
+            speed: current.speed || "Processing...",
+            eta: current.eta || "Finalizing",
+          });
+          return;
+        }
+      });
     });
 
     ytdlpProcess.stderr.on("data", (data) => {
       const output = data.toString();
       console.log("yt-dlp stderr:", output);
+
+      // Detect post-processing/conversion phase from stderr
+      if (!isConverting) {
+        const lower = output.toLowerCase();
+        if (
+          lower.includes("merging formats") ||
+          lower.includes("[merger]") ||
+          lower.includes("post-processing") ||
+          lower.includes("ffmpeg") ||
+          lower.includes("extractaudio") ||
+          lower.includes("writing") ||
+          lower.includes("destination")
+        ) {
+          isConverting = true;
+          const current = activeDownloads.get(downloadId) || {};
+          const newProgress = Math.max(current.progress || 95, 96);
+          activeDownloads.set(downloadId, {
+            ...current,
+            status: "converting",
+            progress: Math.min(newProgress, 99),
+            speed: "Processing...",
+            eta: "Finalizing",
+          });
+
+          io.emit("download-progress", {
+            id: downloadId,
+            status: "converting",
+            progress: Math.min(newProgress, 99),
+            speed: "Processing...",
+            eta: "Finalizing",
+          });
+        }
+      }
     });
 
     ytdlpProcess.on("close", async (code) => {
@@ -645,80 +822,76 @@ app.post("/api/download-direct", async (req, res) => {
 });
 
 // Streaming download with real progress
-app.get('/api/download-stream', async (req, res) => {
+app.get("/api/download-stream", async (req, res) => {
   const { url, format, quality } = req.query;
-  
+
   if (!url || !validator.isURL(url)) {
-    return res.status(400).json({ 
-      error: 'Invalid URL provided',
-      success: false 
+    return res.status(400).json({
+      error: "Invalid URL provided",
+      success: false,
     });
   }
 
   try {
     // Build yt-dlp command for streaming
-    const ytdlpPath = process.platform === 'win32' 
-      ? 'C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe'
-      : 'yt-dlp';
-    
+    const ytdlpPath =
+      process.platform === "win32"
+        ? "C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe"
+        : "yt-dlp";
+
     let command = `"${ytdlpPath}" -f "${format}" -o - "${url}"`;
-    
+
     // Add quality preference if specified
     if (quality) {
       command = `"${ytdlpPath}" -f "${format}[height<=${quality}]" -o - "${url}"`;
     }
 
     console.log(`🔧 Streaming download: ${command}`);
-    
+
     // Get filename for download
     const filenameCommand = `"${ytdlpPath}" --get-filename -o "%(title)s.%(ext)s" "${url}"`;
     const { stdout: filenameOutput } = await exec(filenameCommand);
-    const filename = filenameOutput.trim().replace(/[<>:"/\\|?*]/g, '_'); // Sanitize filename
-    
+    const filename = filenameOutput.trim().replace(/[<>:"/\\|?*]/g, "_"); // Sanitize filename
+
     // Set headers for streaming download
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'application/octet-stream');
-    
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "application/octet-stream");
+
     // Execute streaming download
-    const ytdlpProcess = spawn(ytdlpPath, [
-      '-f', format,
-      '-o', '-',
-      url
-    ], {
-      stdio: ['pipe', 'pipe', 'pipe']
+    const ytdlpProcess = spawn(ytdlpPath, ["-f", format, "-o", "-", url], {
+      stdio: ["pipe", "pipe", "pipe"],
     });
-    
+
     // Handle errors
-    ytdlpProcess.stderr.on('data', (data) => {
-      console.log('yt-dlp stderr:', data.toString());
+    ytdlpProcess.stderr.on("data", (data) => {
+      console.log("yt-dlp stderr:", data.toString());
     });
-    
-    ytdlpProcess.on('error', (error) => {
-      console.error('yt-dlp process error:', error);
+
+    ytdlpProcess.on("error", (error) => {
+      console.error("yt-dlp process error:", error);
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Streaming download failed' });
-      }
-    });
-    
-    // Pipe output to response
-    ytdlpProcess.stdout.pipe(res);
-    
-    // Handle process completion
-    ytdlpProcess.on('close', (code) => {
-      if (code !== 0) {
-        console.error(`yt-dlp process exited with code ${code}`);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Download failed' });
-        }
+        res.status(500).json({ error: "Streaming download failed" });
       }
     });
 
+    // Pipe output to response
+    ytdlpProcess.stdout.pipe(res);
+
+    // Handle process completion
+    ytdlpProcess.on("close", (code) => {
+      if (code !== 0) {
+        console.error(`yt-dlp process exited with code ${code}`);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Download failed" });
+        }
+      }
+    });
   } catch (error) {
-    console.error('❌ Streaming download failed:', error.message);
+    console.error("❌ Streaming download failed:", error.message);
     if (!res.headersSent) {
-      res.status(500).json({ 
-        error: 'Streaming download failed',
-        details: error.message
+      res.status(500).json({
+        error: "Streaming download failed",
+        details: error.message,
       });
     }
   }

@@ -44,6 +44,23 @@
   .progress-fill {
     @apply h-full bg-primary-600 transition-all duration-300 ease-out;
   }
+
+  /* Indeterminate bar animation */
+  .progress-indeterminate {
+    @apply h-full bg-primary-600;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-indeterminate::before {
+    content: "";
+    position: absolute;
+    left: -40%;
+    top: 0;
+    height: 100%;
+    width: 40%;
+    background-color: rgba(59, 130, 246, 0.6); /* primary-500/60 */
+    animation: indeterminate 1.2s infinite ease-out;
+  }
 }
 
 @layer utilities {
@@ -61,5 +78,10 @@
   
   .animate-slide-up {
     animation: slideUp 0.3s ease-out;
+  }
+  @keyframes indeterminate {
+    0% { left: -40%; width: 40%; }
+    50% { left: 60%; width: 40%; }
+    100% { left: 100%; width: 40%; }
   }
 }

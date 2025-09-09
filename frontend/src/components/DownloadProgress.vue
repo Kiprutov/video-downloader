@@ -45,14 +45,13 @@
     <div class="space-y-2">
       <div class="flex justify-between text-sm">
         <span class="text-gray-600">{{ progressDescription }}</span>
-        <span class="text-gray-900 font-medium">{{ progress.progress }}%</span>
+        <span class="text-gray-900 font-medium" v-if="showPercent">{{ progress.progress }}%</span>
       </div>
-      
+
+      <!-- Determinate bar for downloading; indeterminate for starting/converting -->
       <div class="progress-bar">
-        <div 
-          class="progress-fill"
-          :style="{ width: `${progress.progress}%` }"
-        ></div>
+        <div v-if="isDeterminate" class="progress-fill" :style="{ width: `${progress.progress}%` }"></div>
+        <div v-else class="progress-indeterminate"></div>
       </div>
     </div>
 
@@ -134,6 +133,8 @@ defineEmits<Emits>()
 
 const statusText = computed(() => {
   switch (props.progress.status) {
+    case 'starting':
+      return 'Starting Download'
     case 'pending':
       return 'Preparing Download'
     case 'downloading':
@@ -151,6 +152,8 @@ const statusText = computed(() => {
 
 const progressDescription = computed(() => {
   switch (props.progress.status) {
+    case 'starting':
+      return 'Setting up download...'
     case 'pending':
       return 'Initializing download...'
     case 'downloading':
@@ -167,7 +170,7 @@ const progressDescription = computed(() => {
 })
 
 const canCancel = computed(() => {
-  return ['pending', 'downloading', 'converting'].includes(props.progress.status)
+  return ['starting', 'pending', 'downloading', 'converting'].includes(props.progress.status)
 })
 
 const showStats = computed(() => {
@@ -176,6 +179,8 @@ const showStats = computed(() => {
 
 const statusIcon = computed(() => {
   switch (props.progress.status) {
+    case 'starting':
+      return 'clock'
     case 'pending':
       return 'clock'
     case 'downloading':
@@ -204,4 +209,7 @@ const formatFileSize = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
+
+const isDeterminate = computed(() => props.progress.status === 'downloading')
+const showPercent = computed(() => props.progress.status === 'downloading')
 </script>

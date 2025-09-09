@@ -312,9 +312,9 @@ export const useDownloadStore = defineStore("download", () => {
         url: request.url,
         format: request.format,
         quality: request.quality,
-        status: "downloading",
+        status: "starting",
         progress: 0,
-        speed: "0 MB/s",
+        speed: "Starting...",
         eta: "Unknown",
       };
 
