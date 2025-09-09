@@ -111,13 +111,48 @@ async function startDownloadProcess(downloadId, url, format, quality) {
     // Try to prefetch duration for better conversion ETA/percent
     let totalDurationSeconds = null;
     try {
+      // Rotate user agents to avoid detection
+      const userAgents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0",
+      ];
+      const randomUA =
+        userAgents[Math.floor(Math.random() * userAgents.length)];
+
       const metaArgs = [
         "--extractor-args",
-        "youtube:player_client=web",
+        "youtube:player_client=web,android_music,android_creator,android,web_creator",
         "--user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        randomUA,
         "--referer",
         "https://www.youtube.com/",
+        "--add-header",
+        "Accept-Language:en-US,en;q=0.9",
+        "--add-header",
+        "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "--add-header",
+        "Cache-Control:no-cache",
+        "--add-header",
+        "Pragma:no-cache",
+        "--add-header",
+        "Sec-Fetch-Dest:document",
+        "--add-header",
+        "Sec-Fetch-Mode:navigate",
+        "--add-header",
+        "Sec-Fetch-Site:none",
+        "--add-header",
+        "Sec-Fetch-User:?1",
+        "--add-header",
+        "Upgrade-Insecure-Requests:1",
+        "--sleep-requests",
+        "1",
+        "--sleep-interval",
+        "1",
+        "--max-sleep-interval",
+        "3",
         "--no-check-certificate",
         "-q",
         "--no-warnings",
@@ -174,6 +209,36 @@ async function startDownloadProcess(downloadId, url, format, quality) {
         format,
         "-o",
         `${outputPath}.%(ext)s`,
+        "--extractor-args",
+        "youtube:player_client=web,android_music,android_creator,android,web_creator",
+        "--user-agent",
+        randomUA,
+        "--referer",
+        "https://www.youtube.com/",
+        "--add-header",
+        "Accept-Language:en-US,en;q=0.9",
+        "--add-header",
+        "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "--add-header",
+        "Cache-Control:no-cache",
+        "--add-header",
+        "Pragma:no-cache",
+        "--add-header",
+        "Sec-Fetch-Dest:document",
+        "--add-header",
+        "Sec-Fetch-Mode:navigate",
+        "--add-header",
+        "Sec-Fetch-Site:none",
+        "--add-header",
+        "Sec-Fetch-User:?1",
+        "--add-header",
+        "Upgrade-Insecure-Requests:1",
+        "--sleep-requests",
+        "1",
+        "--sleep-interval",
+        "1",
+        "--max-sleep-interval",
+        "3",
         "--progress-template",
         "download:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.speed)s:%(progress.eta)s",
         // Forward FFmpeg post-processing progress to stdout for parsing
@@ -734,11 +799,19 @@ app.post("/api/download-direct", async (req, res) => {
         ? "C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe"
         : "/home/ubuntu/.local/bin/yt-dlp";
 
-    let command = `"${ytdlpPath}" --extractor-args "youtube:player_client=web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -f "${format}" --get-url "${url}"`;
+    // Use same anti-bot measures for direct download
+    const userAgents = [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ];
+    const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+
+    let command = `"${ytdlpPath}" --extractor-args "youtube:player_client=web,android_music,android_creator,android,web_creator" --user-agent "${randomUA}" --referer "https://www.youtube.com/" --add-header "Accept-Language:en-US,en;q=0.9" --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" --sleep-requests 1 --sleep-interval 1 --max-sleep-interval 3 -f "${format}" --get-url "${url}"`;
 
     // Add quality preference if specified
     if (quality) {
-      command = `"${ytdlpPath}" --extractor-args "youtube:player_client=web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -f "${format}[height<=${quality}]" --get-url "${url}"`;
+      command = `"${ytdlpPath}" --extractor-args "youtube:player_client=web,android_music,android_creator,android,web_creator" --user-agent "${randomUA}" --referer "https://www.youtube.com/" --add-header "Accept-Language:en-US,en;q=0.9" --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" --sleep-requests 1 --sleep-interval 1 --max-sleep-interval 3 -f "${format}[height<=${quality}]" --get-url "${url}"`;
     }
 
     console.log(`🔧 Getting direct URL: ${command}`);
