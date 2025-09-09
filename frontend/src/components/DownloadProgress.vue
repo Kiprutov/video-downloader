@@ -93,9 +93,23 @@
         <svg class="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
         </svg>
-        <div>
+        <div class="flex-1">
           <h4 class="text-sm font-medium text-green-800">Download Complete!</h4>
           <p class="text-sm text-green-700 mt-1">Your video has been downloaded successfully.</p>
+          <div v-if="progress.downloadUrl && progress.filename" class="mt-3">
+            <button
+              @click="downloadFile(progress.downloadUrl, progress.filename)"
+              class="btn-primary text-sm px-4 py-2"
+            >
+              <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download File
+            </button>
+            <p class="text-xs text-green-600 mt-1">
+              File: {{ progress.filename }} ({{ formatFileSize(progress.filesize || 0) }})
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -103,6 +117,7 @@
 </template>
 
 <script setup lang="ts">
+import { useDownloadStore } from '@/stores/download';
 import type { DownloadProgress } from '@/types';
 import { computed } from 'vue';
 
@@ -175,4 +190,18 @@ const statusIcon = computed(() => {
       return 'clock'
   }
 })
+
+const downloadStore = useDownloadStore();
+
+const downloadFile = (downloadUrl: string, filename: string) => {
+  downloadStore.downloadFile(downloadUrl, filename);
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 </script>

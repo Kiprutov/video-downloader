@@ -13,6 +13,7 @@
     "@headlessui/vue": "^1.7.16",
     "@heroicons/vue": "^2.0.18",
     "axios": "^1.6.0",
+    "firebase": "^12.2.1",
     "lucide-vue-next": "^0.542.0",
     "pinia": "^2.1.7",
     "socket.io-client": "^4.8.1",

@@ -282,11 +282,7 @@ const selectFormat = (formatId: string) => {
   emit('format-selected', formatId)
 }
 
-const handleLocalDownload = () => {
-  if (selectedFormat.value) {
-    emit('local-download', selectedFormat.value)
-  }
-}
+// handleLocalDownload removed - not used
 
 const handleCloudDownload = () => {
   if (selectedFormat.value) {

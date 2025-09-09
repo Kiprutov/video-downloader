@@ -7,12 +7,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAuthStore } from '@/stores/auth'
-
-const router = useRouter()
+import { onMounted } from 'vue'
 const authStore = useAuthStore()
 
 onMounted(async () => {

@@ -40,6 +40,9 @@ export interface DownloadProgress {
   speed?: string;
   eta?: string;
   error?: string;
+  filename?: string;
+  filesize?: number;
+  downloadUrl?: string;
 }
 
 export interface DownloadHistory {

@@ -30,7 +30,8 @@ export const useDownloadStore = defineStore("download", () => {
     error.value = null;
 
     try {
-      const response = await fetch("http://localhost:3000/api/metadata", {
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${apiBaseUrl}/api/metadata`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -145,20 +146,18 @@ export const useDownloadStore = defineStore("download", () => {
 
   const startDirectDownload = async (request: DownloadRequest) => {
     try {
-      const response = await fetch(
-        "http://localhost:3000/api/download-direct",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url: request.url,
-            format: request.format,
-            quality: request.quality,
-          }),
-        }
-      );
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${apiBaseUrl}/api/download-direct`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: request.url,
+          format: request.format,
+          quality: request.quality,
+        }),
+      });
 
       const result = await response.json();
 
@@ -193,20 +192,18 @@ export const useDownloadStore = defineStore("download", () => {
   const startStreamingDownload = async (request: DownloadRequest) => {
     try {
       // Use POST request for streaming download
-      const response = await fetch(
-        "http://localhost:3000/api/download-stream",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url: request.url,
-            format: request.format,
-            quality: request.quality,
-          }),
-        }
-      );
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${apiBaseUrl}/api/download-stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: request.url,
+          format: request.format,
+          quality: request.quality,
+        }),
+      });
 
       if (!response.ok) {
         throw new Error("Streaming download failed");
@@ -247,7 +244,8 @@ export const useDownloadStore = defineStore("download", () => {
   const connectWebSocket = () => {
     if (socket?.connected) return;
 
-    socket = io("http://localhost:3000");
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+    socket = io(apiBaseUrl);
 
     socket.on("connect", () => {
       console.log("🔌 WebSocket connected");
@@ -284,20 +282,18 @@ export const useDownloadStore = defineStore("download", () => {
       connectWebSocket();
 
       // Start download with progress tracking
-      const response = await fetch(
-        "http://localhost:3000/api/download-legacy",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url: request.url,
-            format: request.format,
-            quality: request.quality,
-          }),
-        }
-      );
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${apiBaseUrl}/api/download-server`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: request.url,
+          format: request.format,
+          quality: request.quality,
+        }),
+      });
 
       const result = await response.json();
 
@@ -338,26 +334,35 @@ export const useDownloadStore = defineStore("download", () => {
     }
   };
 
+  const downloadFile = (downloadUrl: string, filename: string) => {
+    // Create a temporary link to trigger download
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = filename;
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const startLegacyDownload = async (request: DownloadRequest) => {
     try {
       // Connect WebSocket if not already connected
       connectWebSocket();
 
       // Start download with progress tracking
-      const response = await fetch(
-        "http://localhost:3000/api/download-legacy",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url: request.url,
-            format: request.format,
-            quality: request.quality,
-          }),
-        }
-      );
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${apiBaseUrl}/api/download-legacy`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: request.url,
+          format: request.format,
+          quality: request.quality,
+        }),
+      });
 
       const result = await response.json();
 
@@ -385,8 +390,9 @@ export const useDownloadStore = defineStore("download", () => {
       // Poll for completion
       const pollForCompletion = async () => {
         try {
+          const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
           const progressResponse = await fetch(
-            `http://localhost:3000/api/download-progress/${downloadId}`
+            `${apiBaseUrl}/api/download-progress/${downloadId}`
           );
           const progressData = await progressResponse.json();
 
@@ -399,8 +405,9 @@ export const useDownloadStore = defineStore("download", () => {
 
             if (progress.status === "completed") {
               // Get the final result
+              const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
               const resultResponse = await fetch(
-                `http://localhost:3000/api/download-result/${downloadId}`
+                `${apiBaseUrl}/api/download-result/${downloadId}`
               );
               const resultData = await resultResponse.json();
 
@@ -480,7 +487,8 @@ export const useDownloadStore = defineStore("download", () => {
 
   const loadHistory = async () => {
     try {
-      const response = await fetch("http://localhost:3000/api/history");
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      const response = await fetch(`${apiBaseUrl}/api/history`);
       const result = await response.json();
 
       if (response.ok && result.success) {
@@ -547,6 +555,7 @@ export const useDownloadStore = defineStore("download", () => {
     startStreamingDownload,
     startLegacyDownload,
     startServerDownloadWithProgress,
+    downloadFile,
     connectWebSocket,
     disconnectWebSocket,
     cancelDownload,

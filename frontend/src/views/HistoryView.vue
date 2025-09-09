@@ -236,7 +236,7 @@ const totalSize = computed(() => {
   return formatFileSize(totalBytes)
 })
 
-const deleteDownload = (id: string) => {
+const deleteDownload = (_id: string) => {
   // TODO: Implement delete functionality
   toast.info('Delete functionality coming soon')
 }

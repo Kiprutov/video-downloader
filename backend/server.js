@@ -80,161 +80,180 @@ async function startDownloadProcess(downloadId, url, format, quality) {
     const timestamp = Date.now();
     const filename = `video_${timestamp}`;
     const outputPath = path.join(downloadsDir, filename);
-    
+
     // Update status to downloading
     activeDownloads.set(downloadId, {
       ...activeDownloads.get(downloadId),
-      status: 'downloading',
-      progress: 10
-    });
-    
-    io.emit('download-progress', {
-      id: downloadId,
-      status: 'downloading',
+      status: "downloading",
       progress: 10,
-      speed: 'Starting...',
-      eta: 'Unknown'
+    });
+
+    io.emit("download-progress", {
+      id: downloadId,
+      status: "downloading",
+      progress: 10,
+      speed: "Starting...",
+      eta: "Unknown",
     });
 
     // Build yt-dlp command (with full path for Windows)
-    const ytdlpPath = process.platform === 'win32' 
-      ? 'C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe'
-      : 'yt-dlp';
-    
+    const ytdlpPath =
+      process.platform === "win32"
+        ? "C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe"
+        : "yt-dlp";
+
     let command = `"${ytdlpPath}" -f "${format}" -o "${outputPath}.%(ext)s" "${url}"`;
-    
+
     // Add quality preference if specified
     if (quality) {
       command = `"${ytdlpPath}" -f "${format}[height<=${quality}]" -o "${outputPath}.%(ext)s" "${url}"`;
     }
 
     console.log(`🔧 Executing: ${command}`);
-    
+
     // Use spawn instead of exec for real-time output
-    const ytdlpProcess = spawn(ytdlpPath, [
-      '-f', format,
-      '-o', `${outputPath}.%(ext)s`,
-      '--progress-template', 'download:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.speed)s:%(progress.eta)s',
-      url
-    ], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
+    const ytdlpProcess = spawn(
+      ytdlpPath,
+      [
+        "-f",
+        format,
+        "-o",
+        `${outputPath}.%(ext)s`,
+        "--progress-template",
+        "download:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.speed)s:%(progress.eta)s",
+        url,
+      ],
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+      }
+    );
 
     let totalBytes = 0;
     let downloadedBytes = 0;
-    let speed = '0 MB/s';
-    let eta = 'Unknown';
+    let speed = "0 MB/s";
+    let eta = "Unknown";
 
-    ytdlpProcess.stdout.on('data', (data) => {
+    ytdlpProcess.stdout.on("data", (data) => {
       const output = data.toString();
-      console.log('yt-dlp stdout:', output);
-      
+      console.log("yt-dlp stdout:", output);
+
       // Parse progress from yt-dlp output
-      const progressMatch = output.match(/download:(\d+):(\d+):([^:]+):([^\n]+)/);
+      const progressMatch = output.match(
+        /download:(\d+):(\d+):([^:]+):([^\n]+)/
+      );
       if (progressMatch) {
         downloadedBytes = parseInt(progressMatch[1]);
         totalBytes = parseInt(progressMatch[2]);
         speed = progressMatch[3];
         eta = progressMatch[4];
-        
-        const progress = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
-        
+
+        const progress =
+          totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : 0;
+
         // Update progress
         activeDownloads.set(downloadId, {
           ...activeDownloads.get(downloadId),
           progress: Math.min(progress, 95), // Cap at 95% until complete
           speed: speed,
-          eta: eta
+          eta: eta,
         });
-        
+
         // Send progress update
-        io.emit('download-progress', {
+        io.emit("download-progress", {
           id: downloadId,
-          status: 'downloading',
+          status: "downloading",
           progress: Math.min(progress, 95),
           speed: speed,
-          eta: eta
+          eta: eta,
         });
       }
     });
 
-    ytdlpProcess.stderr.on('data', (data) => {
+    ytdlpProcess.stderr.on("data", (data) => {
       const output = data.toString();
-      console.log('yt-dlp stderr:', output);
+      console.log("yt-dlp stderr:", output);
     });
 
-    ytdlpProcess.on('close', async (code) => {
+    ytdlpProcess.on("close", async (code) => {
       if (code === 0) {
         // Download completed successfully
         console.log(`✅ Download completed: ${filename}`);
-        
+
         // Find the downloaded file
         const files = fs.readdirSync(downloadsDir);
-        const downloadedFile = files.find(file => file.startsWith(filename));
-        
+        const downloadedFile = files.find((file) => file.startsWith(filename));
+
         if (downloadedFile) {
           const filePath = path.join(downloadsDir, downloadedFile);
           const fileStats = fs.statSync(filePath);
-          
+
           // Update final status
           activeDownloads.set(downloadId, {
             ...activeDownloads.get(downloadId),
-            status: 'completed',
+            status: "completed",
             progress: 100,
-            speed: 'Complete',
-            eta: '0s',
-            filename: downloadedFile,
-            filesize: fileStats.size
-          });
-          
-          // Send completion update
-          io.emit('download-progress', {
-            id: downloadId,
-            status: 'completed',
-            progress: 100,
-            speed: 'Complete',
-            eta: '0s',
+            speed: "Complete",
+            eta: "0s",
             filename: downloadedFile,
             filesize: fileStats.size,
-            downloadUrl: `/api/download-file/${downloadedFile}`
+            downloadUrl: `https://api.shuleni.co.ke/api/download-file/${downloadedFile}`,
           });
-          
-          // Clean up after 5 minutes
+
+          // Send completion update
+          io.emit("download-progress", {
+            id: downloadId,
+            status: "completed",
+            progress: 100,
+            speed: "Complete",
+            eta: "0s",
+            filename: downloadedFile,
+            filesize: fileStats.size,
+            downloadUrl: `https://api.shuleni.co.ke/api/download-file/${downloadedFile}`,
+          });
+
+          // Clean up after 30 minutes (give users time to download)
           setTimeout(() => {
+            try {
+              if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`🗑️ Cleaned up file: ${downloadedFile}`);
+              }
+            } catch (error) {
+              console.error(`❌ Error cleaning up file: ${error.message}`);
+            }
             activeDownloads.delete(downloadId);
-          }, 5 * 60 * 1000);
+          }, 30 * 60 * 1000); // 30 minutes
         }
       } else {
         // Download failed
         console.error(`❌ Download failed with code ${code}`);
-        
+
         activeDownloads.set(downloadId, {
           ...activeDownloads.get(downloadId),
-          status: 'failed',
-          error: 'Download failed'
+          status: "failed",
+          error: "Download failed",
         });
-        
-        io.emit('download-progress', {
+
+        io.emit("download-progress", {
           id: downloadId,
-          status: 'failed',
-          error: 'Download failed'
+          status: "failed",
+          error: "Download failed",
         });
       }
     });
-
   } catch (error) {
-    console.error('❌ Download process error:', error.message);
-    
+    console.error("❌ Download process error:", error.message);
+
     activeDownloads.set(downloadId, {
       ...activeDownloads.get(downloadId),
-      status: 'failed',
-      error: error.message
+      status: "failed",
+      error: error.message,
     });
-    
-    io.emit('download-progress', {
+
+    io.emit("download-progress", {
       id: downloadId,
-      status: 'failed',
-      error: error.message
+      status: "failed",
+      error: error.message,
     });
   }
 }
@@ -243,59 +262,60 @@ async function startDownloadProcess(downloadId, url, format, quality) {
 const upload = multer({
   dest: downloadsDir,
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
-  }
+    fileSize: 100 * 1024 * 1024, // 100MB limit
+  },
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+app.get("/health", (req, res) => {
+  res.json({
+    status: "OK",
     timestamp: new Date().toISOString(),
-    firebase: firebaseApp ? 'connected' : 'not configured'
+    firebase: firebaseApp ? "connected" : "not configured",
   });
 });
 
 // Get video metadata
-app.post('/api/metadata', async (req, res) => {
+app.post("/api/metadata", async (req, res) => {
   try {
     const { url } = req.body;
-    
+
     if (!url || !validator.isURL(url)) {
-      return res.status(400).json({ 
-        error: 'Invalid URL provided',
-        success: false 
+      return res.status(400).json({
+        error: "Invalid URL provided",
+        success: false,
       });
     }
 
     console.log(`📹 Fetching metadata for: ${url}`);
-    
+
     // Use yt-dlp to get metadata (with full path for Windows)
-    const ytdlpPath = process.platform === 'win32' 
-      ? 'C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe'
-      : 'yt-dlp';
+    const ytdlpPath =
+      process.platform === "win32"
+        ? "C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe"
+        : "yt-dlp";
     const command = `"${ytdlpPath}" --dump-json --no-download "${url}"`;
     const { stdout, stderr } = await exec(command);
-    
+
     if (stderr) {
-      console.log('yt-dlp stderr:', stderr);
+      console.log("yt-dlp stderr:", stderr);
     }
-    
+
     const metadata = JSON.parse(stdout);
-    
+
     // Extract relevant information
     const formats = metadata.formats
-      .filter(format => format.vcodec !== 'none' || format.acodec !== 'none')
-      .map(format => ({
+      .filter((format) => format.vcodec !== "none" || format.acodec !== "none")
+      .map((format) => ({
         format_id: format.format_id,
         ext: format.ext,
-        resolution: format.resolution || 'audio only',
+        resolution: format.resolution || "audio only",
         fps: format.fps,
         vcodec: format.vcodec,
         acodec: format.acodec,
         filesize: format.filesize,
         quality: format.quality,
-        format_note: format.format_note
+        format_note: format.format_note,
       }))
       .sort((a, b) => {
         // Sort by quality (higher is better)
@@ -314,31 +334,30 @@ app.post('/api/metadata', async (req, res) => {
         upload_date: metadata.upload_date,
         view_count: metadata.view_count,
         thumbnail: metadata.thumbnail,
-        formats: formats
-      }
+        formats: formats,
+      },
     };
 
     console.log(`✅ Metadata fetched successfully: ${metadata.title}`);
     res.json(response);
-
   } catch (error) {
-    console.error('❌ Error fetching metadata:', error.message);
-    res.status(500).json({ 
-      error: 'Failed to fetch video metadata',
+    console.error("❌ Error fetching metadata:", error.message);
+    res.status(500).json({
+      error: "Failed to fetch video metadata",
       details: error.message,
-      success: false 
+      success: false,
     });
   }
 });
 
 // Start download and return direct download URL
-app.post('/api/download', async (req, res) => {
+app.post("/api/download", async (req, res) => {
   const { url, format, quality } = req.body;
-  
+
   if (!url || !validator.isURL(url)) {
-    return res.status(400).json({ 
-      error: 'Invalid URL provided',
-      success: false 
+    return res.status(400).json({
+      error: "Invalid URL provided",
+      success: false,
     });
   }
 
@@ -346,127 +365,230 @@ app.post('/api/download', async (req, res) => {
     const timestamp = Date.now();
     const filename = `video_${timestamp}`;
     const outputPath = path.join(downloadsDir, filename);
-    
+
     // Build yt-dlp command (with full path for Windows)
-    const ytdlpPath = process.platform === 'win32' 
-      ? 'C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe'
-      : 'yt-dlp';
-    
+    const ytdlpPath =
+      process.platform === "win32"
+        ? "C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe"
+        : "yt-dlp";
+
     let command = `"${ytdlpPath}" -f "${format}" -o "${outputPath}.%(ext)s" "${url}"`;
-    
+
     // Add quality preference if specified
     if (quality) {
       command = `"${ytdlpPath}" -f "${format}[height<=${quality}]" -o "${outputPath}.%(ext)s" "${url}"`;
     }
 
     console.log(`🔧 Executing: ${command}`);
-    
+
     // Execute download
     const { stdout, stderr } = await exec(command);
-    
+
     if (stderr) {
-      console.log('yt-dlp stderr:', stderr);
+      console.log("yt-dlp stderr:", stderr);
     }
-    
-    console.log('yt-dlp stdout:', stdout);
-    
+
+    console.log("yt-dlp stdout:", stdout);
+
     // Find the downloaded file
     const files = fs.readdirSync(downloadsDir);
-    const downloadedFile = files.find(file => file.startsWith(filename));
-    
+    const downloadedFile = files.find((file) => file.startsWith(filename));
+
     if (!downloadedFile) {
-      throw new Error('Downloaded file not found');
+      throw new Error("Downloaded file not found");
     }
-    
+
     const filePath = path.join(downloadsDir, downloadedFile);
     const fileStats = fs.statSync(filePath);
-    
-    console.log(`✅ Download completed: ${downloadedFile} (${(fileStats.size / 1024 / 1024).toFixed(2)} MB)`);
-    
+
+    console.log(
+      `✅ Download completed: ${downloadedFile} (${(
+        fileStats.size /
+        1024 /
+        1024
+      ).toFixed(2)} MB)`
+    );
+
     // Return direct download URL for browser to handle
     const downloadUrl = `http://localhost:${PORT}/api/download-file/${downloadedFile}`;
-    
+
     res.json({
       success: true,
       data: {
         filename: downloadedFile,
         filesize: fileStats.size,
         downloadUrl: downloadUrl,
-        message: 'Download ready - click to download'
-      }
+        message: "Download ready - click to download",
+      },
     });
-
   } catch (error) {
-    console.error('❌ Download failed:', error.message);
-    res.status(500).json({ 
-      error: 'Download failed',
+    console.error("❌ Download failed:", error.message);
+    res.status(500).json({
+      error: "Download failed",
       details: error.message,
-      success: false 
+      success: false,
     });
   }
 });
 
-// Get direct download URL from yt-dlp (no server processing)
-app.post('/api/download-direct', async (req, res) => {
-    const { url, format, quality } = req.body;
-    
-    if (!url || !validator.isURL(url)) {
-      return res.status(400).json({ 
-        error: 'Invalid URL provided',
-        success: false 
-      });
-    }
+// Start server-side download with progress tracking
+app.post("/api/download-server", async (req, res) => {
+  const { url, format, quality } = req.body;
+
+  if (!url || !validator.isURL(url)) {
+    return res.status(400).json({
+      error: "Invalid URL provided",
+      success: false,
+    });
+  }
+
+  try {
+    const downloadId = `download-${Date.now()}`;
+    const timestamp = Date.now();
+    const filename = `video_${timestamp}`;
+    const outputPath = path.join(downloadsDir, filename);
+
+    // Initialize download tracking
+    activeDownloads.set(downloadId, {
+      id: downloadId,
+      status: "starting",
+      progress: 0,
+      speed: "Starting...",
+      eta: "Unknown",
+      filename: null,
+      filesize: 0,
+      downloadUrl: null,
+    });
+
+    // Start download process in background
+    startDownloadProcess(downloadId, url, format, quality, outputPath);
+
+    res.json({
+      success: true,
+      data: {
+        downloadId: downloadId,
+        status: "starting",
+        message: "Download started. Use WebSocket to track progress.",
+      },
+    });
+  } catch (error) {
+    console.error("❌ Server download failed:", error.message);
+    res.status(500).json({
+      error: "Server download failed",
+      details: error.message,
+      success: false,
+    });
+  }
+});
+
+// Get download status
+app.get("/api/download-status/:downloadId", (req, res) => {
+  const { downloadId } = req.params;
+  const download = activeDownloads.get(downloadId);
+
+  if (!download) {
+    return res.status(404).json({
+      success: false,
+      error: "Download not found",
+    });
+  }
+
+  res.json({
+    success: true,
+    data: download,
+  });
+});
+
+// Download completed file
+app.get("/api/download-file/:filename", (req, res) => {
+  const { filename } = req.params;
+  const filePath = path.join(downloadsDir, filename);
+
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({
+      success: false,
+      error: "File not found",
+    });
+  }
+
+  // Set headers for file download
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", "application/octet-stream");
+
+  // Stream file to client
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+
+  // Clean up file after download (optional - you might want to keep files for a while)
+  fileStream.on("end", () => {
+    console.log(`📁 File served: ${filename}`);
+    // Uncomment the next line if you want to delete files immediately after download
+    // setTimeout(() => fs.unlinkSync(filePath), 5000);
+  });
+});
+
+// Get direct download URL from yt-dlp (no server processing) - Keep for compatibility
+app.post("/api/download-direct", async (req, res) => {
+  const { url, format, quality } = req.body;
+
+  if (!url || !validator.isURL(url)) {
+    return res.status(400).json({
+      error: "Invalid URL provided",
+      success: false,
+    });
+  }
 
   try {
     // Build yt-dlp command to get direct URL
-    const ytdlpPath = process.platform === 'win32' 
-      ? 'C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe'
-      : 'yt-dlp';
-    
-    let command = `"${ytdlpPath}" -f "${format}" --get-url "${url}"`;
-    
+    const ytdlpPath =
+      process.platform === "win32"
+        ? "C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe"
+        : "/home/ubuntu/.local/bin/yt-dlp";
+
+    let command = `"${ytdlpPath}" --extractor-args "youtube:player_client=web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -f "${format}" --get-url "${url}"`;
+
     // Add quality preference if specified
     if (quality) {
-      command = `"${ytdlpPath}" -f "${format}[height<=${quality}]" --get-url "${url}"`;
+      command = `"${ytdlpPath}" --extractor-args "youtube:player_client=web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -f "${format}[height<=${quality}]" --get-url "${url}"`;
     }
 
     console.log(`🔧 Getting direct URL: ${command}`);
-    
+
     // Execute command to get direct URL
     const { stdout, stderr } = await exec(command);
-    
+
     if (stderr) {
-      console.log('yt-dlp stderr:', stderr);
+      console.log("yt-dlp stderr:", stderr);
     }
-    
+
     const directUrl = stdout.trim();
-    
-    if (!directUrl || directUrl.includes('ERROR')) {
-      throw new Error('Could not get direct download URL');
+
+    if (!directUrl || directUrl.includes("ERROR")) {
+      throw new Error("Could not get direct download URL");
     }
-    
+
     console.log(`✅ Direct URL obtained: ${directUrl}`);
-    
+
     // Get filename for download
-    const filenameCommand = `"${ytdlpPath}" --get-filename -o "%(title)s.%(ext)s" "${url}"`;
+    const filenameCommand = `"${ytdlpPath}" --extractor-args "youtube:player_client=web" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" --get-filename -o "%(title)s.%(ext)s" "${url}"`;
     const { stdout: filenameOutput } = await exec(filenameCommand);
-    const filename = filenameOutput.trim().replace(/[<>:"/\\|?*]/g, '_'); // Sanitize filename
-    
+    const filename = filenameOutput.trim().replace(/[<>:"/\\|?*]/g, "_"); // Sanitize filename
+
     res.json({
       success: true,
       data: {
         directUrl: directUrl,
         filename: filename,
-        method: 'direct'
-      }
+        method: "direct",
+      },
     });
-
   } catch (error) {
-    console.error('❌ Direct download failed:', error.message);
-    res.status(500).json({ 
-      error: 'Direct download failed',
+    console.error("❌ Direct download failed:", error.message);
+    res.status(500).json({
+      error: "Direct download failed",
       details: error.message,
-      success: false 
+      success: false,
     });
   }
 });
