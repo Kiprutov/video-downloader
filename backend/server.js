@@ -10,25 +10,29 @@ const path = require('path');
 const fs = require('fs');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-require('dotenv').config();
+const axios = require("axios");
+const youtubedl = require("youtube-dl-exec");
+require("dotenv").config();
 
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST']
-  }
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    methods: ["GET", "POST"],
+  },
 });
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    credentials: true,
+  })
+);
 app.use(helmet());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Initialize Firebase Admin (only if credentials are provided)
@@ -42,31 +46,31 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
       type: "service_account",
       project_id: process.env.FIREBASE_PROJECT_ID,
       private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
       client_email: process.env.FIREBASE_CLIENT_EMAIL,
       client_id: process.env.FIREBASE_CLIENT_ID,
       auth_uri: "https://accounts.google.com/o/oauth2/auth",
       token_uri: "https://oauth2.googleapis.com/token",
       auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-      client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${process.env.FIREBASE_CLIENT_EMAIL}`
+      client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${process.env.FIREBASE_CLIENT_EMAIL}`,
     };
 
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     });
 
     storage = admin.storage().bucket();
     db = admin.firestore();
-    console.log('✅ Firebase Admin initialized successfully');
+    console.log("✅ Firebase Admin initialized successfully");
   } catch (error) {
-    console.log('⚠️  Firebase Admin not initialized:', error.message);
-    console.log('   Running in local-only mode');
+    console.log("⚠️  Firebase Admin not initialized:", error.message);
+    console.log("   Running in local-only mode");
   }
 }
 
 // Create downloads directory
-const downloadsDir = path.join(__dirname, 'downloads');
+const downloadsDir = path.join(__dirname, "downloads");
 if (!fs.existsSync(downloadsDir)) {
   fs.mkdirSync(downloadsDir, { recursive: true });
 }
@@ -76,29 +80,200 @@ const activeDownloads = new Map();
 
 // Helper: resolve yt-dlp path reliably (EC2 pipx path or fallback)
 function getYtdlpPath() {
-  if (process.platform === 'win32') {
-    return 'yt-dlp';
+  if (process.platform === "win32") {
+    return "yt-dlp";
   }
-  const pipxPath = '/home/ubuntu/.local/bin/yt-dlp';
-  return fs.existsSync(pipxPath) ? pipxPath : 'yt-dlp';
+  const pipxPath = "/home/ubuntu/.local/bin/yt-dlp";
+  return fs.existsSync(pipxPath) ? pipxPath : "yt-dlp";
 }
 
 // Helper: run yt-dlp with args and capture stdout/stderr safely
 function runYtDlp(args) {
   return new Promise((resolve, reject) => {
-    const ytdlp = spawn(getYtdlpPath(), args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    ytdlp.stdout.on('data', (d) => { stdout += d.toString(); });
-    ytdlp.stderr.on('data', (d) => { stderr += d.toString(); });
-    ytdlp.on('error', (err) => reject(err));
-    ytdlp.on('close', (code) => {
+    const ytdlp = spawn(getYtdlpPath(), args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    ytdlp.stdout.on("data", (d) => {
+      stdout += d.toString();
+    });
+    ytdlp.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
+    ytdlp.on("error", (err) => reject(err));
+    ytdlp.on("close", (code) => {
       if (code !== 0 && !stdout) {
         return reject(new Error(stderr || `yt-dlp exited with code ${code}`));
       }
       resolve({ stdout, stderr, code });
     });
   });
+}
+
+// ==================== FALLBACK SYSTEM ====================
+
+// Helper: Extract video ID from YouTube URL
+function extractVideoId(url) {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    /youtube\.com\/v\/([^&\n?#]+)/,
+    /youtube\.com\/shorts\/([^&\n?#]+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+
+  throw new Error("Invalid YouTube URL");
+}
+
+// Fallback 1: Try Invidious instances
+async function tryInvidiousFallback(videoId) {
+  const instances = [
+    "https://invidious.io",
+    "https://invidious.flokinet.to",
+    "https://invidious.nerdvpn.de",
+    "https://invidious.privacydev.net",
+    "https://inv.riverside.rocks",
+  ];
+
+  for (const instance of instances) {
+    try {
+      console.log(`🔄 Trying Invidious: ${instance}`);
+      const response = await axios.get(`${instance}/api/v1/videos/${videoId}`, {
+        timeout: 10000,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
+
+      const data = response.data;
+      console.log(`✅ Invidious success: ${instance}`);
+
+      return {
+        success: true,
+        source: "invidious",
+        data: {
+          title: data.title,
+          duration: data.lengthSeconds,
+          thumbnail: data.videoThumbnails?.[0]?.url || data.thumbnail,
+          formats: data.adaptiveFormats || data.formatStreams || [],
+          description: data.description,
+          uploader: data.author,
+          view_count: data.viewCount,
+        },
+      };
+    } catch (error) {
+      console.log(`❌ Invidious failed: ${instance} - ${error.message}`);
+      continue;
+    }
+  }
+
+  throw new Error("All Invidious instances failed");
+}
+
+// Fallback 2: Try Piped instances
+async function tryPipedFallback(videoId) {
+  const instances = [
+    "https://pipedapi.kavin.rocks",
+    "https://api-piped.mha.fi",
+    "https://pipedapi.tux.pizza",
+    "https://pipedapi.osphost.fi",
+  ];
+
+  for (const instance of instances) {
+    try {
+      console.log(`🔄 Trying Piped: ${instance}`);
+      const response = await axios.get(`${instance}/streams/${videoId}`, {
+        timeout: 10000,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
+
+      const data = response.data;
+      console.log(`✅ Piped success: ${instance}`);
+
+      return {
+        success: true,
+        source: "piped",
+        data: {
+          title: data.title,
+          duration: data.duration,
+          thumbnail: data.thumbnailUrl,
+          formats: [...(data.videoStreams || []), ...(data.audioStreams || [])],
+          description: data.description,
+          uploader: data.uploader,
+          view_count: data.views,
+        },
+      };
+    } catch (error) {
+      console.log(`❌ Piped failed: ${instance} - ${error.message}`);
+      continue;
+    }
+  }
+
+  throw new Error("All Piped instances failed");
+}
+
+// Fallback 3: Try youtube-dl (legacy)
+async function tryYoutubeDlFallback(url) {
+  try {
+    console.log(`🔄 Trying youtube-dl fallback`);
+    const result = await youtubedl(url, {
+      dumpSingleJson: true,
+      noCheckCertificates: true,
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    });
+
+    console.log(`✅ youtube-dl success`);
+
+    return {
+      success: true,
+      source: "youtube-dl",
+      data: {
+        title: result.title,
+        duration: result.duration,
+        thumbnail: result.thumbnail,
+        formats: result.formats || [],
+        description: result.description,
+        uploader: result.uploader,
+        view_count: result.view_count,
+      },
+    };
+  } catch (error) {
+    console.log(`❌ youtube-dl failed: ${error.message}`);
+    throw error;
+  }
+}
+
+// Main fallback function
+async function getVideoMetadataWithFallback(url) {
+  const videoId = extractVideoId(url);
+  console.log(`🎯 Starting fallback system for video: ${videoId}`);
+
+  const fallbacks = [
+    () => tryInvidiousFallback(videoId),
+    () => tryPipedFallback(videoId),
+    () => tryYoutubeDlFallback(url),
+  ];
+
+  for (let i = 0; i < fallbacks.length; i++) {
+    try {
+      const result = await fallbacks[i]();
+      console.log(`🎉 Fallback success with method ${i + 1}`);
+      return result;
+    } catch (error) {
+      console.log(`❌ Fallback method ${i + 1} failed: ${error.message}`);
+      if (i === fallbacks.length - 1) {
+        throw new Error("All fallback methods failed");
+      }
+    }
+  }
 }
 
 // Function to start download process with real-time progress
@@ -583,12 +758,63 @@ async function handleMetadata(url, res) {
     console.log(`✅ Metadata fetched: ${metadata.title}`);
     return res.json(response);
   } catch (error) {
-    console.error("❌ Error fetching metadata:", error.message);
-    return res.status(500).json({
-      error: "Failed to fetch video metadata",
-      details: error.message,
-      success: false,
-    });
+    console.error("❌ Primary yt-dlp failed:", error.message);
+    console.log(`🔄 Trying fallback system...`);
+
+    try {
+      // Try fallback system
+      const fallbackResult = await getVideoMetadataWithFallback(url);
+
+      // Convert fallback result to expected format
+      const formats = Array.isArray(fallbackResult.data.formats)
+        ? fallbackResult.data.formats
+            .filter(
+              (fmt) => fmt && (fmt.vcodec !== "none" || fmt.acodec !== "none")
+            )
+            .map((fmt) => ({
+              format_id: fmt.format_id || fmt.itag,
+              ext: fmt.ext || "mp4",
+              resolution: fmt.resolution || "audio only",
+              fps: fmt.fps,
+              vcodec: fmt.vcodec,
+              acodec: fmt.acodec,
+              filesize: fmt.filesize || fmt.filesize_approx,
+              quality: fmt.quality,
+              format_note: fmt.format_note,
+            }))
+            .sort(
+              (a, b) =>
+                (parseFloat(b.quality) || 0) - (parseFloat(a.quality) || 0)
+            )
+        : [];
+
+      const response = {
+        success: true,
+        data: {
+          title: fallbackResult.data.title,
+          description: fallbackResult.data.description || "",
+          duration: fallbackResult.data.duration,
+          uploader: fallbackResult.data.uploader || "",
+          upload_date: fallbackResult.data.upload_date || "",
+          view_count: fallbackResult.data.view_count || 0,
+          thumbnail: fallbackResult.data.thumbnail,
+          formats,
+        },
+        source: fallbackResult.source,
+      };
+
+      console.log(
+        `✅ Metadata fetched with fallback (${fallbackResult.source}): ${fallbackResult.data.title}`
+      );
+      return res.json(response);
+    } catch (fallbackError) {
+      console.error("❌ All methods failed:", fallbackError.message);
+      return res.status(500).json({
+        error: "Failed to fetch video metadata from all sources",
+        details: fallbackError.message,
+        success: false,
+      });
+    }
   }
 }
 
