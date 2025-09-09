@@ -149,13 +149,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
       eta: "Unknown",
     });
 
-    io.emit("download-progress", {
-      id: downloadId,
-      status: "starting",
-      progress: 0,
-      speed: "Starting...",
-      eta: "Unknown",
-    });
+    // Starting status set in activeDownloads map for polling
 
     // Build yt-dlp command (with full path for Windows)
     const ytdlpPath =
@@ -214,9 +208,10 @@ async function startDownloadProcess(downloadId, url, format, quality) {
         const line = lineRaw.trim();
         if (!line) return;
 
-        // yt-dlp download progress
-        const dlMatch = line.match(/download:(\d+):(\d+):([^:]+):(.+)/);
+        // yt-dlp download progress (format: downloaded:total:speed:eta)
+        const dlMatch = line.match(/^(\d+):(\d+):([^:]+):(.+)$/);
         if (dlMatch) {
+          console.log("📊 Parsed progress:", dlMatch);
           downloadedBytes = parseInt(dlMatch[1]);
           totalBytes = parseInt(dlMatch[2]);
           speed = dlMatch[3];
@@ -243,13 +238,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             eta: eta,
           });
 
-          io.emit("download-progress", {
-            id: downloadId,
-            status: isConverting ? "converting" : "downloading",
-            progress: clamped,
-            speed: isConverting ? "Processing..." : speed,
-            eta: isConverting ? "Finalizing" : eta,
-          });
+          // Progress updated in activeDownloads map for polling
           return;
         }
 
@@ -287,13 +276,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             eta: "Finalizing",
           });
 
-          io.emit("download-progress", {
-            id: downloadId,
-            status: "converting",
-            progress: convProgress,
-            speed: "Processing...",
-            eta: "Finalizing",
-          });
+          // Converting progress updated in activeDownloads map for polling
           return;
         }
 
@@ -308,13 +291,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             speed: speedDisplay,
           });
 
-          io.emit("download-progress", {
-            id: downloadId,
-            status: "converting",
-            progress: current.progress || 97,
-            speed: speedDisplay,
-            eta: current.eta || "Finalizing",
-          });
+          // Speed update in activeDownloads map for polling
           return;
         }
 
@@ -328,13 +305,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             ...current,
             status: "converting",
           });
-          io.emit("download-progress", {
-            id: downloadId,
-            status: "converting",
-            progress: current.progress || 97,
-            speed: current.speed || "Processing...",
-            eta: current.eta || "Finalizing",
-          });
+          // Progress status updated in activeDownloads map for polling
           return;
         }
       });

@@ -240,7 +240,78 @@ export const useDownloadStore = defineStore("download", () => {
     }
   };
 
-  // WebSocket connection management
+  // Progress polling management
+  let pollingInterval: NodeJS.Timeout | null = null;
+
+  const startProgressPolling = (downloadId: string) => {
+    // Clear any existing polling
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    // Poll every 1 second
+    pollingInterval = setInterval(async () => {
+      try {
+        const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+        const response = await fetch(
+          `${apiBaseUrl}/api/download-progress/${downloadId}`
+        );
+        const result = await response.json();
+
+        if (result.success && currentDownload.value?.id === downloadId) {
+          const progress = result.data;
+          console.log("📊 Download progress:", progress);
+
+          currentDownload.value = {
+            ...currentDownload.value,
+            ...progress,
+          };
+
+          // Stop polling if download is complete or failed
+          if (progress.status === "completed" || progress.status === "failed") {
+            stopProgressPolling();
+
+            // If completed, trigger download
+            if (
+              progress.status === "completed" &&
+              progress.downloadUrl &&
+              progress.filename
+            ) {
+              downloadFile(progress.downloadUrl, progress.filename);
+
+              // Add to history
+              const historyItem: DownloadHistory = {
+                id: downloadId,
+                url: currentDownload.value?.url || "",
+                title: metadata.value?.title || "Unknown",
+                format: currentDownload.value?.format || "",
+                quality: currentDownload.value?.quality || "auto",
+                fileSize: progress.filesize || 0,
+                downloadUrl: progress.downloadUrl,
+                createdAt: new Date(),
+                completedAt: new Date(),
+                status: "completed",
+              };
+              downloadHistory.value.unshift(historyItem);
+              saveHistory();
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Progress polling failed:", error);
+        // Don't stop polling on network errors, just log them
+      }
+    }, 1000);
+  };
+
+  const stopProgressPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+  };
+
+  // WebSocket connection management (kept for compatibility)
   const connectWebSocket = () => {
     if (socket?.connected) return;
 
@@ -278,9 +349,6 @@ export const useDownloadStore = defineStore("download", () => {
 
   const startServerDownloadWithProgress = async (request: DownloadRequest) => {
     try {
-      // Connect WebSocket if not already connected
-      connectWebSocket();
-
       // Start download with progress tracking
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
       const response = await fetch(`${apiBaseUrl}/api/download-server`, {
@@ -318,6 +386,9 @@ export const useDownloadStore = defineStore("download", () => {
         eta: "Unknown",
       };
 
+      // Start polling for progress updates
+      startProgressPolling(downloadId);
+
       return {
         success: true,
         downloadId,
@@ -347,9 +418,6 @@ export const useDownloadStore = defineStore("download", () => {
 
   const startLegacyDownload = async (request: DownloadRequest) => {
     try {
-      // Connect WebSocket if not already connected
-      connectWebSocket();
-
       // Start download with progress tracking
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
       const response = await fetch(`${apiBaseUrl}/api/download-legacy`, {
@@ -381,79 +449,14 @@ export const useDownloadStore = defineStore("download", () => {
         url: request.url,
         format: request.format,
         quality: request.quality,
-        status: "downloading",
+        status: "starting",
         progress: 0,
-        speed: "0 MB/s",
+        speed: "Starting...",
         eta: "Unknown",
       };
 
-      // Poll for completion
-      const pollForCompletion = async () => {
-        try {
-          const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-          const progressResponse = await fetch(
-            `${apiBaseUrl}/api/download-progress/${downloadId}`
-          );
-          const progressData = await progressResponse.json();
-
-          if (progressData.success) {
-            const progress = progressData.data;
-            currentDownload.value = {
-              ...currentDownload.value!,
-              ...progress,
-            };
-
-            if (progress.status === "completed") {
-              // Get the final result
-              const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-              const resultResponse = await fetch(
-                `${apiBaseUrl}/api/download-result/${downloadId}`
-              );
-              const resultData = await resultResponse.json();
-
-              if (resultData.success) {
-                // Trigger browser download
-                const link = document.createElement("a");
-                link.href = resultData.data.downloadUrl;
-                link.download = resultData.data.filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
-                // Add to history
-                const historyItem: DownloadHistory = {
-                  id: downloadId,
-                  url: request.url,
-                  title: metadata.value?.title || "Unknown",
-                  format: request.format,
-                  quality: request.quality || "auto",
-                  fileSize: resultData.data.filesize || 0,
-                  downloadUrl: resultData.data.downloadUrl,
-                  createdAt: new Date(),
-                  completedAt: new Date(),
-                  status: "completed",
-                };
-
-                downloadHistory.value.unshift(historyItem);
-                saveHistory();
-
-                return { success: true, data: historyItem };
-              }
-            } else if (progress.status === "failed") {
-              throw new Error(progress.error || "Download failed");
-            } else {
-              // Continue polling
-              setTimeout(pollForCompletion, 1000);
-            }
-          }
-        } catch (error) {
-          console.error("Progress polling failed:", error);
-          throw error;
-        }
-      };
-
-      // Start polling
-      setTimeout(pollForCompletion, 1000);
+      // Start polling for progress updates
+      startProgressPolling(downloadId);
 
       return {
         success: true,
@@ -471,6 +474,7 @@ export const useDownloadStore = defineStore("download", () => {
   };
 
   const cancelDownload = () => {
+    stopProgressPolling();
     if (currentDownload.value) {
       currentDownload.value.status = "failed";
       currentDownload.value.error = "Download cancelled by user";
@@ -558,6 +562,8 @@ export const useDownloadStore = defineStore("download", () => {
     downloadFile,
     connectWebSocket,
     disconnectWebSocket,
+    startProgressPolling,
+    stopProgressPolling,
     cancelDownload,
     clearError,
     clearMetadata,
