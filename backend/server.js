@@ -74,6 +74,33 @@ if (!fs.existsSync(downloadsDir)) {
 // Store active downloads for progress tracking
 const activeDownloads = new Map();
 
+// Helper: resolve yt-dlp path reliably (EC2 pipx path or fallback)
+function getYtdlpPath() {
+  if (process.platform === 'win32') {
+    return 'yt-dlp';
+  }
+  const pipxPath = '/home/ubuntu/.local/bin/yt-dlp';
+  return fs.existsSync(pipxPath) ? pipxPath : 'yt-dlp';
+}
+
+// Helper: run yt-dlp with args and capture stdout/stderr safely
+function runYtDlp(args) {
+  return new Promise((resolve, reject) => {
+    const ytdlp = spawn(getYtdlpPath(), args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    ytdlp.stdout.on('data', (d) => { stdout += d.toString(); });
+    ytdlp.stderr.on('data', (d) => { stderr += d.toString(); });
+    ytdlp.on('error', (err) => reject(err));
+    ytdlp.on('close', (code) => {
+      if (code !== 0 && !stdout) {
+        return reject(new Error(stderr || `yt-dlp exited with code ${code}`));
+      }
+      resolve({ stdout, stderr, code });
+    });
+  });
+}
+
 // Function to start download process with real-time progress
 async function startDownloadProcess(downloadId, url, format, quality) {
   try {
@@ -275,54 +302,67 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Get video metadata
-app.post("/api/metadata", async (req, res) => {
+// Internal handler to fetch metadata (used by GET/POST)
+async function handleMetadata(url, res) {
+  if (!url || !validator.isURL(url)) {
+    return res
+      .status(400)
+      .json({ error: "Invalid URL provided", success: false });
+  }
+
+  console.log(`📹 Fetching metadata for: ${url}`);
+
   try {
-    const { url } = req.body;
+    const args = [
+      "--extractor-args",
+      "youtube:player_client=web",
+      "--user-agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "--referer",
+      "https://www.youtube.com/",
+      "--no-check-certificate",
+      "-q",
+      "--no-warnings",
+      "--dump-json",
+      "--no-download",
+      url,
+    ];
 
-    if (!url || !validator.isURL(url)) {
-      return res.status(400).json({
-        error: "Invalid URL provided",
-        success: false,
-      });
-    }
-
-    console.log(`📹 Fetching metadata for: ${url}`);
-
-    // Use yt-dlp to get metadata (with full path for Windows)
-    const ytdlpPath =
-      process.platform === "win32"
-        ? "C:\\Users\\SYSTEM 6\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\yt-dlp.exe"
-        : "yt-dlp";
-    const command = `"${ytdlpPath}" --dump-json --no-download "${url}"`;
-    const { stdout, stderr } = await exec(command);
-
+    const { stdout, stderr } = await runYtDlp(args);
     if (stderr) {
-      console.log("yt-dlp stderr:", stderr);
+      console.log("yt-dlp stderr:", stderr.slice(0, 500));
     }
 
-    const metadata = JSON.parse(stdout);
+    // Some builds may include logs; pick the JSON line
+    const jsonLine =
+      stdout
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.startsWith("{") && l.endsWith("}")) || stdout.trim();
 
-    // Extract relevant information
-    const formats = metadata.formats
-      .filter((format) => format.vcodec !== "none" || format.acodec !== "none")
-      .map((format) => ({
-        format_id: format.format_id,
-        ext: format.ext,
-        resolution: format.resolution || "audio only",
-        fps: format.fps,
-        vcodec: format.vcodec,
-        acodec: format.acodec,
-        filesize: format.filesize,
-        quality: format.quality,
-        format_note: format.format_note,
-      }))
-      .sort((a, b) => {
-        // Sort by quality (higher is better)
-        const qualityA = parseFloat(a.quality) || 0;
-        const qualityB = parseFloat(b.quality) || 0;
-        return qualityB - qualityA;
-      });
+    const metadata = JSON.parse(jsonLine);
+
+    const formats = Array.isArray(metadata.formats)
+      ? metadata.formats
+          .filter(
+            (fmt) => fmt && (fmt.vcodec !== "none" || fmt.acodec !== "none")
+          )
+          .map((fmt) => ({
+            format_id: fmt.format_id,
+            ext: fmt.ext,
+            resolution: fmt.resolution || "audio only",
+            fps: fmt.fps,
+            vcodec: fmt.vcodec,
+            acodec: fmt.acodec,
+            filesize: fmt.filesize || fmt.filesize_approx,
+            quality: fmt.quality,
+            format_note: fmt.format_note,
+          }))
+          .sort(
+            (a, b) =>
+              (parseFloat(b.quality) || 0) - (parseFloat(a.quality) || 0)
+          )
+      : [];
 
     const response = {
       success: true,
@@ -334,20 +374,31 @@ app.post("/api/metadata", async (req, res) => {
         upload_date: metadata.upload_date,
         view_count: metadata.view_count,
         thumbnail: metadata.thumbnail,
-        formats: formats,
+        formats,
       },
     };
 
-    console.log(`✅ Metadata fetched successfully: ${metadata.title}`);
-    res.json(response);
+    console.log(`✅ Metadata fetched: ${metadata.title}`);
+    return res.json(response);
   } catch (error) {
     console.error("❌ Error fetching metadata:", error.message);
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to fetch video metadata",
       details: error.message,
       success: false,
     });
   }
+}
+
+// GET and POST variants for metadata
+app.get("/api/metadata", async (req, res) => {
+  const { url } = req.query;
+  return handleMetadata(url, res);
+});
+
+app.post("/api/metadata", async (req, res) => {
+  const { url } = req.body;
+  return handleMetadata(url, res);
 });
 
 // Start download and return direct download URL
