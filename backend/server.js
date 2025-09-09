@@ -230,10 +230,11 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             });
           }
 
-          const clamped = Math.min(progress, 95);
+          // Scale download progress to 0-80%
+          const downloadProgress = Math.min(Math.round(progress * 0.8), 80);
           activeDownloads.set(downloadId, {
             ...activeDownloads.get(downloadId),
-            progress: clamped,
+            progress: downloadProgress,
             speed: speed,
             eta: eta,
           });
@@ -253,18 +254,22 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             if (!Number.isNaN(num)) outTimeMs = num;
           }
 
-          // Update progress based on duration if available
-          let convProgress = activeDownloads.get(downloadId)?.progress || 95;
+          // Update conversion progress (81-99%)
+          let convProgress = 81; // Start conversion at 81%
           if (outTimeMs != null && totalDurationSeconds) {
             const denom = totalDurationSeconds * 1_000_000; // out_time_ms is in microseconds
             if (denom > 0) {
+              // Scale conversion progress from 81% to 99%
+              const conversionRatio = outTimeMs / denom;
               convProgress = Math.min(
                 99,
-                Math.max(96, Math.round((outTimeMs / denom) * 100))
+                Math.max(81, 81 + Math.round(conversionRatio * 18))
               );
             }
           } else {
-            convProgress = Math.min(99, Math.max(convProgress, 96));
+            // If no duration info, gradually increase from 81% to 99%
+            const current = activeDownloads.get(downloadId)?.progress || 81;
+            convProgress = Math.min(99, Math.max(81, current + 1));
           }
 
           // Emit converting update (speed/eta refined below if we parse speed line)
@@ -329,7 +334,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
         ) {
           isConverting = true;
           const current = activeDownloads.get(downloadId) || {};
-          const newProgress = Math.max(current.progress || 95, 96);
+          const newProgress = Math.max(current.progress || 80, 81);
           activeDownloads.set(downloadId, {
             ...current,
             status: "converting",
@@ -338,13 +343,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             eta: "Finalizing",
           });
 
-          io.emit("download-progress", {
-            id: downloadId,
-            status: "converting",
-            progress: Math.min(newProgress, 99),
-            speed: "Processing...",
-            eta: "Finalizing",
-          });
+          // Conversion status updated in activeDownloads map for polling
         }
       }
     });
@@ -374,17 +373,7 @@ async function startDownloadProcess(downloadId, url, format, quality) {
             downloadUrl: `https://api.shuleni.co.ke/api/download-file/${downloadedFile}`,
           });
 
-          // Send completion update
-          io.emit("download-progress", {
-            id: downloadId,
-            status: "completed",
-            progress: 100,
-            speed: "Complete",
-            eta: "0s",
-            filename: downloadedFile,
-            filesize: fileStats.size,
-            downloadUrl: `https://api.shuleni.co.ke/api/download-file/${downloadedFile}`,
-          });
+          // Completion status updated in activeDownloads map for polling
 
           // Clean up after 30 minutes (give users time to download)
           setTimeout(() => {
@@ -552,7 +541,7 @@ app.post("/api/metadata", async (req, res) => {
 // Start download and return direct download URL
 app.post("/api/download", async (req, res) => {
   const { url, format, quality } = req.body;
-
+  
   if (!url || !validator.isURL(url)) {
     return res.status(400).json({
       error: "Invalid URL provided",
@@ -632,14 +621,14 @@ app.post("/api/download", async (req, res) => {
 
 // Start server-side download with progress tracking
 app.post("/api/download-server", async (req, res) => {
-  const { url, format, quality } = req.body;
+    const { url, format, quality } = req.body;
 
-  if (!url || !validator.isURL(url)) {
-    return res.status(400).json({
-      error: "Invalid URL provided",
-      success: false,
-    });
-  }
+    if (!url || !validator.isURL(url)) {
+      return res.status(400).json({
+        error: "Invalid URL provided",
+        success: false,
+      });
+    }
 
   try {
     const downloadId = `download-${Date.now()}`;
